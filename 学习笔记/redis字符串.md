@@ -17,12 +17,50 @@ r e d i s \0
 
 ### Redis SDS
 
+>源码文件：sds.h、sds.c
+
 SDS数据结构
 
 - len：字符串数组现有长度
 - alloc：字符串数组的分配空间长度
 - flags：SDS类型
 - buf[]：字符串数组
+
+##### 代码定义
+```c
+/* __attribute__ ((__packed__))是希望编译器严格按照结构体长度分配空间，不要只申请3字节给8字节这种
+ *可以看到主要是len、alloc的类型不同，这是Redis针对不同长度的字符串定义不同类型长度的元数据字段，精打细算节省空间 */
+/* Note: sdshdr5 is never used, we just access the flags byte directly.
+ * However is here to document the layout of type 5 SDS strings. */
+struct __attribute__ ((__packed__)) sdshdr5 {
+    unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
+    char buf[];
+};
+struct __attribute__ ((__packed__)) sdshdr8 {
+    uint8_t len; /* used */
+    uint8_t alloc; /* excluding the header and null terminator */
+    unsigned char flags; /* 3 lsb of type, 5 unused bits */
+    char buf[];
+};
+struct __attribute__ ((__packed__)) sdshdr16 {
+    uint16_t len; /* used */
+    uint16_t alloc; /* excluding the header and null terminator */
+    unsigned char flags; /* 3 lsb of type, 5 unused bits */
+    char buf[];
+};
+struct __attribute__ ((__packed__)) sdshdr32 {
+    uint32_t len; /* used */
+    uint32_t alloc; /* excluding the header and null terminator */
+    unsigned char flags; /* 3 lsb of type, 5 unused bits */
+    char buf[];
+};
+struct __attribute__ ((__packed__)) sdshdr64 {
+    uint64_t len; /* used */
+    uint64_t alloc; /* excluding the header and null terminator */
+    unsigned char flags; /* 3 lsb of type, 5 unused bits */
+    char buf[];
+};
+```
 
 ##### 定义char*别名
 
@@ -65,7 +103,9 @@ sds sdsnewlen(const void *init, size_t initlen) {
         //如果不需要初始化，全部填充0
         memset(sh, 0, hdrlen+initlen+1);
     s = (char*)sh+hdrlen;
+    //s[-1]
     fp = ((unsigned char*)s)-1;
+    //设置类型、总长度、分配长度
     switch(type) {
         case SDS_TYPE_5: {
             *fp = type | (initlen << SDS_TYPE_BITS);
@@ -105,6 +145,111 @@ sds sdsnewlen(const void *init, size_t initlen) {
         memcpy(s, init, initlen);
     //补充末尾0
     s[initlen] = '\0';
+    return s;
+}
+```
+
+##### 拼接字符串
+
+```c
+/* Append the specified binary-safe string pointed by 't' of 'len' bytes to the
+ * end of the specified sds string 's'.
+ *
+ * After the call, the passed sds string is no longer valid and all the
+ * references must be substituted with the new pointer returned by the call. */
+sds sdscatlen(sds s, const void *t, size_t len) {
+    //当前sds字符串长度
+    size_t curlen = sdslen(s);
+
+    //如有必要，进行扩容
+    s = sdsMakeRoomFor(s,len);
+    if (s == NULL) return NULL;
+    //拼接目标字符串
+    memcpy(s+curlen, t, len);
+    //重新设置sds字符串长度
+    sdssetlen(s, curlen+len);
+    //末尾添加结束符
+    s[curlen+len] = '\0';
+    return s;
+}
+```
+
+##### 扩容
+
+```c
+/* Enlarge the free space at the end of the sds string so that the caller
+ * is sure that after calling this function can overwrite up to addlen
+ * bytes after the end of the string, plus one more byte for nul term.
+ *
+ * Note: this does not change the *length* of the sds string as returned
+ * by sdslen(), but only the free buffer space we have. */
+sds sdsMakeRoomFor(sds s, size_t addlen) {
+    void *sh, *newsh;
+    //s的剩余可用长度
+    size_t avail = sdsavail(s);
+    size_t len, newlen;
+    //sds类型
+    char type, oldtype = s[-1] & SDS_TYPE_MASK;
+    int hdrlen;
+
+    /* Return ASAP if there is enough space left. */
+    //如果剩余可用长度大于新增的长度，不进行扩容
+    if (avail >= addlen) return s;
+
+    //s的总长度
+    len = sdslen(s);
+    //获取sds的字符串数据，去除元数据, 剩余char*真正字符串部分
+    sh = (char*)s-sdsHdrSize(oldtype);
+    newlen = (len+addlen);
+    //防止相加溢出
+    assert(newlen > len);   /* Catch size_t overflow */
+    if (newlen < SDS_MAX_PREALLOC)
+        //小于1024*1024，两倍扩容
+        newlen *= 2;
+    else
+        //大于或等于1024*1024，扩容1M
+        newlen += SDS_MAX_PREALLOC;
+
+    //根据新总长度，获取sds类型
+    type = sdsReqType(newlen);
+
+    /* Don't use type 5: the user is appending to the string and type 5 is
+     * not able to remember empty space, so sdsMakeRoomFor() must be called
+     * at every appending operation. */
+    //不推荐使用SDS_TYPE_5
+    if (type == SDS_TYPE_5) type = SDS_TYPE_8;
+
+    //获取元数据长度
+    hdrlen = sdsHdrSize(type);
+    //防止溢出
+    assert(hdrlen + newlen + 1 > len);  /* Catch size_t overflow */
+    //类型不变
+    if (oldtype==type) {
+        //扩容
+        newsh = s_realloc(sh, hdrlen+newlen+1);
+        //判断是否扩容失败
+        if (newsh == NULL) return NULL;
+        s = (char*)newsh+hdrlen;
+    } else {
+        /* Since the header size changes, need to move the string forward,
+         * and can't use realloc */
+        //扩容
+        newsh = s_malloc(hdrlen+newlen+1);
+        //判断是否扩容失败
+        if (newsh == NULL) return NULL;
+        //复制旧sds字符串数据部分
+        memcpy((char*)newsh+hdrlen, s, len+1);
+        //是否旧sds字符串
+        s_free(sh);
+        //加上新的元数据
+        s = (char*)newsh+hdrlen;
+        //设置类型
+        s[-1] = type;
+        //设置长度
+        sdssetlen(s, len);
+    }
+    //设置sds的分配长度(alloc)
+    sdssetalloc(s, newlen);
     return s;
 }
 ```
