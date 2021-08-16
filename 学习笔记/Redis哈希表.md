@@ -74,12 +74,14 @@ typedef struct dictIterator {
 ##### 创建哈希表
 
 ```c
-/* Create a new hash table */
+/* 创建一个新的哈希表 */
 dict *dictCreate(dictType *type,
         void *privDataPtr)
 {
+    //创建一个dict，并分配空间
     dict *d = zmalloc(sizeof(*d));
 
+    //初始化
     _dictInit(d,type,privDataPtr);
     return d;
 }
@@ -88,12 +90,20 @@ dict *dictCreate(dictType *type,
 int _dictInit(dict *d, dictType *type,
         void *privDataPtr)
 {
+    //table=NULL、size=0、sizemask=0、used=0
+    //初始化第一个哈希表的元数据值
     _dictReset(&d->ht[0]);
+    //初始化第一个哈希表的元数据值
     _dictReset(&d->ht[1]);
+    //类型
     d->type = type;
+    //私有数据
     d->privdata = privDataPtr;
+    //没有在rehash
     d->rehashidx = -1;
+    //当前运行迭代器数量0
     d->iterators = 0;
+    //初始化成功
     return DICT_OK;
 }
 ```
@@ -106,30 +116,19 @@ int _dictInit(dict *d, dictType *type,
 /* Add an element to the target hash table */
 int dictAdd(dict *d, void *key, void *val)
 {
+    //创建节点
     dictEntry *entry = dictAddRaw(d,key,NULL);
 
+    //创建节点失败
     if (!entry) return DICT_ERR;
+    //设置value，可能使用valDup
     dictSetVal(d, entry, val);
+    //添加成功
     return DICT_OK;
 }
 
-/* Low level add or find:
- * This function adds the entry but instead of setting a value returns the
- * dictEntry structure to the user, that will make sure to fill the value
- * field as he wishes.
- *
- * This function is also directly exposed to the user API to be called
- * mainly in order to store non-pointers inside the hash value, example:
- *
- * entry = dictAddRaw(dict,mykey,NULL);
- * if (entry != NULL) dictSetSignedIntegerVal(entry,1000);
- *
- * Return values:
- *
- * If key already exists NULL is returned, and "*existing" is populated
- * with the existing entry if existing is not NULL.
- *
- * If key was added, the hash entry is returned to be manipulated by the caller.
+/**
+ * 添加哈希节点
  */
 dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing)
 {
@@ -137,28 +136,43 @@ dictEntry *dictAddRaw(dict *d, void *key, dictEntry **existing)
     dictEntry *entry;
     dictht *ht;
 
+    //如果哈希表d正在rehash中，添加元素会进行一部分rehash工作(渐进式rehash)
     if (dictIsRehashing(d)) _dictRehashStep(d);
 
-    /* Get the index of the new element, or -1 if
-     * the element already exists. */
+    //获取改key的哈希值所在table的下标，如果返回-1表示改key已经存在，不进行创建
     if ((index = _dictKeyIndex(d, key, dictHashKey(d,key), existing)) == -1)
         return NULL;
 
-    /* Allocate the memory and store the new entry.
-     * Insert the element in top, with the assumption that in a database
-     * system it is more likely that recently added entries are accessed
-     * more frequently. */
+    //如果哈希表d正在rehash，使用第二个dictht，否则使用第一个dictht
     ht = dictIsRehashing(d) ? &d->ht[1] : &d->ht[0];
+    //创建哈希节点并分配空间
     entry = zmalloc(sizeof(*entry));
+    //指向该位置的第一个元素
     entry->next = ht->table[index];
+    //头插法
     ht->table[index] = entry;
+    //使用次数+1
     ht->used++;
 
-    /* Set the hash entry fields. */
+    //设置节点的key，因为可能使用keyDup函数
     dictSetKey(d, entry, key);
+    //返回节点
     return entry;
 }
 
+/**
+ * 如果哈希表d的type的keyDup返回不为空，则节点的key为keyDup返回值
+ */
+#define dictSetKey(d, entry, _key_) do { \
+    if ((d)->type->keyDup) \
+        (entry)->key = (d)->type->keyDup((d)->privdata, _key_); \
+    else \
+        (entry)->key = (_key_); \
+} while(0)
+
+/**
+ * 如果哈希表d的type的valDup返回不为空，则节点的value为valDup返回值
+ */
 #define dictSetVal(d, entry, _val_) do { \
     if ((d)->type->valDup) \
         (entry)->v.val = (d)->type->valDup((d)->privdata, _val_); \

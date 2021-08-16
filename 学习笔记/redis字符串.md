@@ -29,9 +29,7 @@ SDS数据结构
 ##### 代码定义
 ```c
 /* __attribute__ ((__packed__))是希望编译器严格按照结构体长度分配空间，不要只申请3字节给8字节这种
- *可以看到主要是len、alloc的类型不同，这是Redis针对不同长度的字符串定义不同类型长度的元数据字段，精打细算节省空间 */
-/* Note: sdshdr5 is never used, we just access the flags byte directly.
- * However is here to document the layout of type 5 SDS strings. */
+ * 可以看到主要是len、alloc的类型不同，这是Redis针对不同长度的字符串定义不同类型长度的元数据字段，精打细算节省空间 */
 struct __attribute__ ((__packed__)) sdshdr5 {
     unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
     char buf[];
