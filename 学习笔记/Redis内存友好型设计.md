@@ -5,7 +5,10 @@
 ##### RedisObject设计
 
 ```c
-//:4标识分配4字节，又是一个节省内存的好技巧
+/* server.h
+ * :4标识分配4字节，又是一个节省内存的好技巧, redisObject(键值对对象) */
+#define LRU_BITS 24
+
 typedef struct redisObject {
     unsigned type:4;
     unsigned encoding:4;
@@ -33,46 +36,57 @@ typedef struct redisObject {
 ```c
 //object.c
 #define OBJ_ENCODING_EMBSTR_SIZE_LIMIT 44
+
+//创建字符串对象，嵌入式字符串还是sds
 robj *createStringObject(const char *ptr, size_t len) {
     if (len <= OBJ_ENCODING_EMBSTR_SIZE_LIMIT)
+        //如果字符串长度小于等于44，创建嵌入式字符串，直接存在*ptr指针
         return createEmbeddedStringObject(ptr,len);
     else
+        //创建普通sds字符串
         return createRawStringObject(ptr,len);
 }
 
-/* Create a string object with encoding OBJ_ENCODING_EMBSTR, that is
- * an object where the sds string is actually an unmodifiable string
- * allocated in the same chunk as the object itself. */
+/* object.c 创建嵌入式字符串 */
 robj *createEmbeddedStringObject(const char *ptr, size_t len) {
+    //创建redisObject，并分配空间，额外分配sds结构体长度+字符串长度+1的空间
     robj *o = zmalloc(sizeof(robj)+sizeof(struct sdshdr8)+len+1);
+    //
     struct sdshdr8 *sh = (void*)(o+1);
 
+    //字符串类型
     o->type = OBJ_STRING;
+    //编码为OBJ_ENCODING_EMBSTR，嵌入式字符串
     o->encoding = OBJ_ENCODING_EMBSTR;
+    //
     o->ptr = sh+1;
     o->refcount = 1;
+    //缓存淘汰策略
     if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {
         o->lru = (LFUGetTimeInMinutes()<<8) | LFU_INIT_VAL;
     } else {
         o->lru = LRU_CLOCK();
     }
 
+    //sds各项属性赋值
     sh->len = len;
     sh->alloc = len;
     sh->flags = SDS_TYPE_8;
     if (ptr == SDS_NOINIT)
+        //不用初始化
         sh->buf[len] = '\0';
     else if (ptr) {
+        //字符串不为空，需要初始化
         memcpy(sh->buf,ptr,len);
         sh->buf[len] = '\0';
     } else {
+        //填充0
         memset(sh->buf,0,len+1);
     }
     return o;
 }
 
-/* Create a string object with encoding OBJ_ENCODING_RAW, that is a plain
- * string object where o->ptr points to a proper sds string. */
+//走创建sds字符串逻辑
 robj *createRawStringObject(const char *ptr, size_t len) {
     return createObject(OBJ_STRING, sdsnewlen(ptr,len));
 }
@@ -84,12 +98,46 @@ robj *createRawStringObject(const char *ptr, size_t len) {
 
 #### 压缩列表ziplist
 
+##### 压缩列表ziplist布局
+
+```c
+/*
+* ZIPLIST OVERALL LAYOUT
+* ======================
+*
+* The general layout of the ziplist is as follows:
+*
+* <zlbytes> <zltail> <zllen> <entry> <entry> ... <entry> <zlend>
+*
+* NOTE: all fields are stored in little endian, if not specified otherwise.
+*
+* <uint32_t zlbytes> is an unsigned integer to hold the number of bytes that
+* the ziplist occupies, including the four bytes of the zlbytes field itself.
+* This value needs to be stored to be able to resize the entire structure
+* without the need to traverse it first.
+*
+* <uint32_t zltail> is the offset to the last entry in the list. This allows
+* a pop operation on the far side of the list without the need for full
+* traversal.
+*
+* <uint16_t zllen> is the number of entries. When there are more than
+* 2^16-2 entries, this value is set to 2^16-1 and we need to traverse the
+* entire list to know how many items it holds.
+*
+* <uint8_t zlend> is a special entry representing the end of the ziplist.
+* Is encoded as a single byte equal to 255. No other normal entry starts
+* with a byte set to the value of 255. 
+* /
+```
+<列表字节数> <列表最后一个元素偏移量> <列表元素个数> <元素1> ... <元素n> <末尾结束字符255>
+
 ##### 创建压缩列表
 
 ```c
-/*ziplist.c*/
-/* Create a new empty ziplist. */
+/* ziplist.c
+ * 创建压缩列表 */
 unsigned char *ziplistNew(void) {
+    //
     unsigned int bytes = ZIPLIST_HEADER_SIZE+ZIPLIST_END_SIZE;
     unsigned char *zl = zmalloc(bytes);
     ZIPLIST_BYTES(zl) = intrev32ifbe(bytes);
@@ -98,6 +146,8 @@ unsigned char *ziplistNew(void) {
     zl[bytes-1] = ZIP_END;
     return zl;
 }
+
+
 ```
 
 
