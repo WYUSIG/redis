@@ -131,25 +131,154 @@ robj *createRawStringObject(const char *ptr, size_t len) {
 ```
 <列表字节数> <列表最后一个元素偏移量> <列表元素个数> <元素1> ... <元素n> <末尾结束字符255>
 
+##### ziplist entry
+```c
+<prevlen> <encoding> <entry-data>
+```
+
+
 ##### 创建压缩列表
 
 ```c
 /* ziplist.c
  * 创建压缩列表 */
 unsigned char *ziplistNew(void) {
-    //
+    //计算zlbytes长度 + zltail长度 + zllen长度 + zlend长度
     unsigned int bytes = ZIPLIST_HEADER_SIZE+ZIPLIST_END_SIZE;
+    //分配zlbytes、zltail、zllen、zlend空间
     unsigned char *zl = zmalloc(bytes);
+    //设置zlbytes
     ZIPLIST_BYTES(zl) = intrev32ifbe(bytes);
+    //设置zltail
     ZIPLIST_TAIL_OFFSET(zl) = intrev32ifbe(ZIPLIST_HEADER_SIZE);
+    //zllen初始化为0
     ZIPLIST_LENGTH(zl) = 0;
+    //结尾加上结束符
     zl[bytes-1] = ZIP_END;
+    //返回
     return zl;
 }
-
-
 ```
 
+
+#### push操作
+push指可以在ziplist头或尾插入元素
+```c
+/**
+ * @parm *zl 压缩列表
+ * @parm *s 插入的字符串
+ * @parm slen 插入字符串的长度
+ * @parm where 0插入头部，其他插入尾部
+ */
+unsigned char *ziplistPush(unsigned char *zl, unsigned char *s, unsigned int slen, int where) {
+    unsigned char *p;
+    //如果where==0，获取ziplist entrys头部指针，否则获取最尾部指针
+    p = (where == ZIPLIST_HEAD) ? ZIPLIST_ENTRY_HEAD(zl) : ZIPLIST_ENTRY_END(zl);
+    //插入
+    return __ziplistInsert(zl,p,s,slen);
+}
+
+/* Insert item at "p". */
+unsigned char *__ziplistInsert(unsigned char *zl, unsigned char *p, unsigned char *s, unsigned int slen) {
+    //压缩列表当前bytes数
+    size_t curlen = intrev32ifbe(ZIPLIST_BYTES(zl)), reqlen;
+    unsigned int prevlensize, prevlen = 0;
+    size_t offset;
+    int nextdiff = 0;
+    unsigned char encoding = 0;
+    long long value = 123456789; /* initialized to avoid warning. Using a value
+                                    that is easy to see if for some reason
+                                    we use it uninitialized. */
+    zlentry tail;
+
+    /* Find out prevlen for the entry that is inserted. */
+    if (p[0] != ZIP_END) {
+        //如果p不是压缩列表尾部的话，需要解析ziplist entry的prevlensize是1还是5，以及拿出prevlen
+        ZIP_DECODE_PREVLEN(p, prevlensize, prevlen);
+    } else {
+        unsigned char *ptail = ZIPLIST_ENTRY_TAIL(zl);
+        if (ptail[0] != ZIP_END) {
+            prevlen = zipRawEntryLength(ptail);
+        }
+    }
+
+    /* See if the entry can be encoded */
+    if (zipTryEncoding(s,slen,&value,&encoding)) {
+        /* 'encoding' is set to the appropriate integer encoding */
+        reqlen = zipIntSize(encoding);
+    } else {
+        /* 'encoding' is untouched, however zipStoreEntryEncoding will use the
+         * string length to figure out how to encode it. */
+        reqlen = slen;
+    }
+    /* We need space for both the length of the previous entry and
+     * the length of the payload. */
+    reqlen += zipStorePrevEntryLength(NULL,prevlen);
+    reqlen += zipStoreEntryEncoding(NULL,encoding,slen);
+
+    /* When the insert position is not equal to the tail, we need to
+     * make sure that the next entry can hold this entry's length in
+     * its prevlen field. */
+    int forcelarge = 0;
+    nextdiff = (p[0] != ZIP_END) ? zipPrevLenByteDiff(p,reqlen) : 0;
+    if (nextdiff == -4 && reqlen < 4) {
+        nextdiff = 0;
+        forcelarge = 1;
+    }
+
+    /* Store offset because a realloc may change the address of zl. */
+    offset = p-zl;
+    zl = ziplistResize(zl,curlen+reqlen+nextdiff);
+    p = zl+offset;
+
+    /* Apply memory move when necessary and update tail offset. */
+    if (p[0] != ZIP_END) {
+        /* Subtract one because of the ZIP_END bytes */
+        memmove(p+reqlen,p-nextdiff,curlen-offset-1+nextdiff);
+
+        /* Encode this entry's raw length in the next entry. */
+        if (forcelarge)
+            zipStorePrevEntryLengthLarge(p+reqlen,reqlen);
+        else
+            zipStorePrevEntryLength(p+reqlen,reqlen);
+
+        /* Update offset for tail */
+        ZIPLIST_TAIL_OFFSET(zl) =
+            intrev32ifbe(intrev32ifbe(ZIPLIST_TAIL_OFFSET(zl))+reqlen);
+
+        /* When the tail contains more than one entry, we need to take
+         * "nextdiff" in account as well. Otherwise, a change in the
+         * size of prevlen doesn't have an effect on the *tail* offset. */
+        zipEntry(p+reqlen, &tail);
+        if (p[reqlen+tail.headersize+tail.len] != ZIP_END) {
+            ZIPLIST_TAIL_OFFSET(zl) =
+                intrev32ifbe(intrev32ifbe(ZIPLIST_TAIL_OFFSET(zl))+nextdiff);
+        }
+    } else {
+        /* This element will be the new tail. */
+        ZIPLIST_TAIL_OFFSET(zl) = intrev32ifbe(p-zl);
+    }
+
+    /* When nextdiff != 0, the raw length of the next entry has changed, so
+     * we need to cascade the update throughout the ziplist */
+    if (nextdiff != 0) {
+        offset = p-zl;
+        zl = __ziplistCascadeUpdate(zl,p+reqlen);
+        p = zl+offset;
+    }
+
+    /* Write the entry */
+    p += zipStorePrevEntryLength(p,prevlen);
+    p += zipStoreEntryEncoding(p,encoding,slen);
+    if (ZIP_IS_STR(encoding)) {
+        memcpy(p,s,slen);
+    } else {
+        zipSaveInteger(p,value,encoding);
+    }
+    ZIPLIST_INCR_LENGTH(zl,1);
+    return zl;
+}
+```
 
 
 
