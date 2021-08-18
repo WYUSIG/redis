@@ -1,13 +1,16 @@
 ## Redis源码学习-6.0.15
 
 ### 嵌入式字符串
->嵌入式字符串是redis在创建字符串对象时，如果该字符长度少于等于44字节，则直接放到redis object *pr指针里面
+>嵌入式字符串是redis在创建字符串对象时，如果该字符长度少于等于44字节，sds字符串直接分配到相邻空间，可以减少内存碎片
+```c
+/* [redis object][sdshdr8][字符串][\0] */
+```
 
 #### redis object定义
 
 ```c
 /* server.h
- * :4标识分配4bit(位)，又是一个节省内存的好技巧, redisObject(键值对对象) */
+ * :4标识分配4bit(位)，又是一个节省内存的好技巧 */
 #define LRU_BITS 24
 
 typedef struct redisObject {
@@ -69,19 +72,22 @@ robj *createStringObject(const char *ptr, size_t len) {
         return createRawStringObject(ptr,len);
 }
 
-/* object.c 创建嵌入式字符串 */
+/* object.c 
+ * 创建嵌入式字符串 
+ * [redis object][sdshdr8][字符串][\0]
+ * */
 robj *createEmbeddedStringObject(const char *ptr, size_t len) {
     //创建redisObject，并分配空间，额外分配sds结构体长度+字符串长度+1的空间
     robj *o = zmalloc(sizeof(robj)+sizeof(struct sdshdr8)+len+1);
-    //
+    //指针移到[sdshdr8]
     struct sdshdr8 *sh = (void*)(o+1);
-
     //字符串类型
     o->type = OBJ_STRING;
     //编码为OBJ_ENCODING_EMBSTR，嵌入式字符串
     o->encoding = OBJ_ENCODING_EMBSTR;
-    //
+    //redis object *ptr指针指向[字符串]
     o->ptr = sh+1;
+    //引用数量1
     o->refcount = 1;
     //缓存淘汰策略
     if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {
