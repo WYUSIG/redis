@@ -1759,8 +1759,11 @@ void databasesCron(void) {
  * such info only when calling this function from serverCron() but not when
  * calling it from call(). */
 void updateCachedTime(int update_daylight_info) {
+    //获取微秒
     server.ustime = ustime();
+    //获取毫秒
     server.mstime = server.ustime / 1000;
+    //获取秒
     server.unixtime = server.mstime / 1000;
 
     /* To get information about daylight saving time, we need to call
@@ -1768,6 +1771,7 @@ void updateCachedTime(int update_daylight_info) {
      * context is safe since we will never fork() while here, in the main
      * thread. The logging function will call a thread safe version of
      * localtime that has no locks. */
+    //是否更新夏令时
     if (update_daylight_info) {
         struct tm tm;
         time_t ut = server.unixtime;
@@ -2343,44 +2347,73 @@ void createSharedObjects(void) {
 void initServerConfig(void) {
     int j;
 
+    //更新缓存时间
     updateCachedTime(1);
+    //设置服务器运行ID
     getRandomHexChars(server.runid,CONFIG_RUN_ID_SIZE);
+    //为运行ID加上结尾字符
     server.runid[CONFIG_RUN_ID_SIZE] = '\0';
+    //设置复制id
     changeReplicationId();
+    //清空之前的复制id
     clearReplicationId2();
+    //设置默认服务频率
     server.hz = CONFIG_DEFAULT_HZ; /* Initialize it ASAP, even if it may get
                                       updated later after loading the config.
                                       This value may be used before the server
                                       is initialized. */
+    //设置时区
     server.timezone = getTimeZone(); /* Initialized by tzset(). */
+    //配置文件路径
     server.configfile = NULL;
+    //可执行文件路径
     server.executable = NULL;
+    //服务运行架构，32位还是64位
     server.arch_bits = (sizeof(long) == 8) ? 64 : 32;
+    //服务地址数
     server.bindaddr_count = 0;
+    //unix套接字权限
     server.unixsocketperm = CONFIG_DEFAULT_UNIX_SOCKET_PERM;
     server.ipfd_count = 0;
     server.tlsfd_count = 0;
     server.sofd = -1;
     server.active_expire_enabled = 1;
+    //客户端查询最大缓冲区大小，默认1G
     server.client_max_querybuf_len = PROTO_MAX_QUERYBUF_LEN;
+    //用于记录RDB变化的数组
     server.saveparams = NULL;
+    //正在从磁盘加载数据标志
     server.loading = 0;
+    //日志文件路径
     server.logfile = zstrdup(CONFIG_DEFAULT_LOGFILE);
+    //AOF状态
     server.aof_state = AOF_OFF;
+    //AOF最后启动或重写时的大小
     server.aof_rewrite_base_size = 0;
+    //是否正在AOF重写标志
     server.aof_rewrite_scheduled = 0;
     server.aof_flush_sleep = 0;
+    //AOF最后一次刷盘fsync的时间
     server.aof_last_fsync = time(NULL);
+    //AOF上一次重写所花时间
     server.aof_rewrite_time_last = -1;
+    //当前AOF重写开始时间
     server.aof_rewrite_time_start = -1;
+    //AOF上一次重写是否成功
     server.aof_lastbgrewrite_status = C_OK;
+    //延迟的AOF刷盘fsync计数器
     server.aof_delayed_fsync = 0;
+    //当前AOF文件描述符File descriptor
     server.aof_fd = -1;
+    //AOF当前选择的db编号
     server.aof_selected_db = -1; /* Make sure the first time will not match */
+    //AOF延迟刷盘的开始时间
     server.aof_flush_postponed_start = 0;
+    //pid文件路径
     server.pidfile = NULL;
     server.active_defrag_running = 0;
     server.notify_keyspace_events = 0;
+    //正在阻塞的客户端命令数
     server.blocked_clients = 0;
     memset(server.blocked_clients_by_type,0,
            sizeof(server.blocked_clients_by_type));
@@ -2391,14 +2424,18 @@ void initServerConfig(void) {
     server.next_client_id = 1; /* Client IDs, start from 1 .*/
     server.loading_process_events_interval_bytes = (1024*1024*2);
 
+    //初始化LRU时间
     server.lruclock = getLRUClock();
+    //重置保存条件
     resetServerSaveParams();
 
+    //只有一处改变，一小时保存一次；100处5分钟保存一次，10000处改变一分钟保存一次
     appendServerSaveParams(60*60,1);  /* save after 1 hour and 1 change */
     appendServerSaveParams(300,100);  /* save after 5 minutes and 100 changes */
     appendServerSaveParams(60,10000); /* save after 1 minute and 10000 changes */
 
     /* Replication related */
+    //初始化和复制相关的状态
     server.masterauth = NULL;
     server.masterhost = NULL;
     server.masterport = 6379;
@@ -2414,6 +2451,7 @@ void initServerConfig(void) {
     server.master_repl_offset = 0;
 
     /* Replication partial resync backlog */
+    //初始化psync命令所使用的backlog
     server.repl_backlog = NULL;
     server.repl_backlog_histlen = 0;
     server.repl_backlog_idx = 0;
@@ -2421,6 +2459,7 @@ void initServerConfig(void) {
     server.repl_no_slaves_since = time(NULL);
 
     /* Client output buffer limits */
+    //设置客户端的输出缓冲区限制
     for (j = 0; j < CLIENT_TYPE_OBUF_COUNT; j++)
         server.client_obuf_limits[j] = clientBufferLimitsDefaults[j];
 
@@ -2429,6 +2468,7 @@ void initServerConfig(void) {
         server.oom_score_adj_values[j] = configOOMScoreAdjValuesDefaults[j];
 
     /* Double constants initialization */
+    //初始化浮点常量
     R_Zero = 0.0;
     R_PosInf = 1.0/R_Zero;
     R_NegInf = -1.0/R_Zero;
@@ -2437,6 +2477,7 @@ void initServerConfig(void) {
     /* Command table -- we initialize it here as it is part of the
      * initial configuration, since command names may be changed via
      * redis.conf using the rename-command directive. */
+    //初始化命令表，在这里初始化是因为接下来读取.conf文件可能会用到这些命令
     server.commands = dictCreate(&commandTableDictType,NULL);
     server.orig_commands = dictCreate(&commandTableDictType,NULL);
     populateCommandTable();
@@ -2466,6 +2507,7 @@ void initServerConfig(void) {
      * (single commands executed by the script), and not by sending the
      * script to the slave / AOF. This is the new way starting from
      * Redis 5. However it is possible to revert it via redis.conf. */
+    //复制类型，redis5开始使用发送命令而不是AOF来进行复制
     server.lua_always_replicate_commands = 1;
 
     initConfigValues();
@@ -5160,8 +5202,10 @@ void memtest(size_t megabytes, int passes);
 int checkForSentinelMode(int argc, char **argv) {
     int j;
 
+    //如果使用redis-sentinel启动，直接返回1
     if (strstr(argv[0],"redis-sentinel") != NULL) return 1;
     for (j = 1; j < argc; j++)
+        //如果参数中包含--sentinel，返回1
         if (!strcmp(argv[j],"--sentinel")) return 1;
     return 0;
 }
@@ -5350,11 +5394,15 @@ int main(int argc, char **argv) {
     uint8_t hashseed[16];
     getRandomBytes(hashseed,sizeof(hashseed));
     dictSetHashFunctionSeed(hashseed);
+    //检查服务器是否以 Sentinel 模式启动
     server.sentinel_mode = checkForSentinelMode(argc,argv);
+    //初始化服务器
     initServerConfig();
+    //初始化ACL(Access Control list), Redis6新增的权限控制
     ACLInit(); /* The ACL subsystem must be initialized ASAP because the
                   basic networking code and client creation depends on it. */
     moduleInitModulesSystem();
+    //https tls
     tlsInit();
 
     /* Store the executable path and arguments in a safe place in order
@@ -5367,6 +5415,7 @@ int main(int argc, char **argv) {
     /* We need to init sentinel right now as parsing the configuration file
      * in sentinel mode will have the effect of populating the sentinel
      * data structures with master nodes to monitor. */
+    //如果以Sentinel模式启动，那么进行Sentinel功能相关初始化，并要为监视的主服务创建一些相应的数据结构
     if (server.sentinel_mode) {
         initSentinelConfig();
         initSentinel();
@@ -5376,16 +5425,20 @@ int main(int argc, char **argv) {
      * the program main. However the program is part of the Redis executable
      * so that we can easily execute an RDB check on loading errors. */
     if (strstr(argv[0],"redis-check-rdb") != NULL)
+        //如果使用redis-check-rdb启动则进行rdb文件检查
         redis_check_rdb_main(argc,argv,NULL);
     else if (strstr(argv[0],"redis-check-aof") != NULL)
+        //如果使用redis-check-aof启动则进行aof文件检查
         redis_check_aof_main(argc,argv);
 
+    //检查用户是否指定了配置文件或者配置项
     if (argc >= 2) {
         j = 1; /* First option to parse in argv[] */
         sds options = sdsempty();
         char *configfile = NULL;
 
         /* Handle special options --help and --version */
+        //处理特殊选项，版本、帮助和测试
         if (strcmp(argv[1], "-v") == 0 ||
             strcmp(argv[1], "--version") == 0) version();
         if (strcmp(argv[1], "--help") == 0 ||
@@ -5402,8 +5455,10 @@ int main(int argc, char **argv) {
         }
 
         /* First argument is the config file name? */
+        //如果第一个参数(argv[1])不是以“--”开头，那么它应该是一个配置文件
         if (argv[j][0] != '-' || argv[j][1] != '-') {
             configfile = argv[j];
+            //获取配置文件绝对路径
             server.configfile = getAbsolutePath(configfile);
             /* Replace the config file in server.exec_argv with
              * its absolute path. */
@@ -5416,6 +5471,8 @@ int main(int argc, char **argv) {
          * configuration file. For instance --port 6380 will generate the
          * string "port 6380\n" to be parsed after the actual file name
          * is parsed, if any. */
+        //对用户给定的其余选项进行分析，并将分析所得的字符串最佳到加载的配置文件后面
+        //比如--port 6379 会被分析为“port 6379\n”
         while(j != argc) {
             if (argv[j][0] == '-' && argv[j][1] == '-') {
                 /* Option name */
@@ -5434,6 +5491,7 @@ int main(int argc, char **argv) {
             }
             j++;
         }
+        //如果是sentinel模式但是又没有指定配置文件
         if (server.sentinel_mode && configfile && *configfile == '-') {
             serverLog(LL_WARNING,
                 "Sentinel config from STDIN not allowed.");
@@ -5441,12 +5499,15 @@ int main(int argc, char **argv) {
                 "Sentinel needs config file on disk to save state.  Exiting...");
             exit(1);
         }
+        //重置保存条件
         resetServerSaveParams();
+        //载入配置文件
         loadServerConfig(configfile,options);
         sdsfree(options);
     }
 
     server.supervised = redisIsSupervised(server.supervised_mode);
+    //将服务器设置为守护进程
     int background = server.daemonize && !server.supervised;
     if (background) daemonize();
 
@@ -5466,8 +5527,10 @@ int main(int argc, char **argv) {
     }
 
     readOOMScoreAdj();
+    //初始化服务器数据结构
     initServer();
     if (background || server.pidfile) createPidFile();
+    //给进程设置名字
     redisSetProcTitle(argv[0]);
     redisAsciiArt();
     checkTcpBacklogSettings();
@@ -5497,7 +5560,9 @@ int main(int argc, char **argv) {
         moduleLoadFromQueue();
         ACLLoadUsersAtStartup();
         InitServerLast();
+        //从AOF或RDB文件中载入数据
         loadDataFromDisk();
+        //是否是集群？
         if (server.cluster_enabled) {
             if (verifyClusterConfigWithData() == C_ERR) {
                 serverLog(LL_WARNING,
@@ -5528,14 +5593,16 @@ int main(int argc, char **argv) {
     }
 
     /* Warning the user about suspicious maxmemory setting. */
+    //如果设置的最大内存小于1m，进行提示
     if (server.maxmemory > 0 && server.maxmemory < 1024*1024) {
         serverLog(LL_WARNING,"WARNING: You specified a maxmemory value that is less than 1MB (current value is %llu bytes). Are you sure this is what you really want?", server.maxmemory);
     }
 
     redisSetCpuAffinity(server.server_cpulist);
     setOOMScoreAdj(-1);
-
+    //运行事件处理器，一直到服务关闭
     aeMain(server.el);
+    //服务器关闭，停止事件循环
     aeDeleteEventLoop(server.el);
     return 0;
 }

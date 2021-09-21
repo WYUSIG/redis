@@ -374,12 +374,15 @@ void loadServerConfigFromString(char *config) {
         int argc;
 
         linenum = i+1;
+        //移除字符串前置空白和后缀空白
         lines[i] = sdstrim(lines[i]," \t\r\n");
 
         /* Skip comments and blank lines */
+        //跳过注释和空白行
         if (lines[i][0] == '#' || lines[i][0] == '\0') continue;
 
         /* Split into arguments */
+        //将字符串分割成多个参数
         argv = sdssplitargs(lines[i],&argc);
         if (argv == NULL) {
             err = "Unbalanced quotes in configuration line";
@@ -387,10 +390,12 @@ void loadServerConfigFromString(char *config) {
         }
 
         /* Skip this line if the resulting command vector is empty. */
+        //跳过空白参数
         if (argc == 0) {
             sdsfreesplitres(argv,argc);
             continue;
         }
+        //将选项名称转成小写
         sdstolower(argv[0]);
 
         /* Iterate the configs that are standard */
@@ -412,12 +417,14 @@ void loadServerConfigFromString(char *config) {
             }
         }
 
+        //如果没有命中标准参数，则跳过
         if (match) {
             sdsfreesplitres(argv,argc);
             continue;
         }
 
         /* Execute config directives */
+        //bind配置，服务器接受请求的客户端地址(白名单)
         if (!strcasecmp(argv[0],"bind") && argc >= 2) {
             int j, addresses = argc-1;
 
@@ -438,6 +445,7 @@ void loadServerConfigFromString(char *config) {
                 err = "Invalid socket file permissions"; goto loaderr;
             }
         } else if (!strcasecmp(argv[0],"save")) {
+            //save配置，多长时间改变多少处保存一次
             if (argc == 3) {
                 int seconds = atoi(argv[1]);
                 int changes = atoi(argv[2]);
@@ -455,6 +463,7 @@ void loadServerConfigFromString(char *config) {
                 exit(1);
             }
         } else if (!strcasecmp(argv[0],"logfile") && argc == 2) {
+            //logfile配置，日志文件路径
             FILE *logfp;
 
             zfree(server.logfile);
@@ -2266,12 +2275,19 @@ static int updateTlsCfgInt(long long val, long long prev, char **err) {
 
 standardConfig configs[] = {
     /* Bool configs */
+    //是否禁用rdb文件CRC校验和校验，默认禁用
     createBoolConfig("rdbchecksum", NULL, IMMUTABLE_CONFIG, server.rdb_checksum, 1, NULL, NULL),
+    //是否以守护进程启动Redis，(守护进程：在系统引导装入时启动，仅在系统关闭时才终止)，默认否
     createBoolConfig("daemonize", NULL, IMMUTABLE_CONFIG, server.daemonize, 0, NULL, NULL),
+    //io线程是否也进行读操作，默认否，只进行写，将客户端缓冲区传输到套接字
     createBoolConfig("io-threads-do-reads", NULL, IMMUTABLE_CONFIG, server.io_threads_do_reads, 0,NULL, NULL), /* Read + parse from threads? */
+    //复制类型，是使用真实命令进行复制，还是使用AOF文件进行复制，默认真实命令
     createBoolConfig("lua-replicate-commands", NULL, MODIFIABLE_CONFIG, server.lua_always_replicate_commands, 1, NULL, NULL),
+    //是否启动日志也输出Redis ascii logo，默认否
     createBoolConfig("always-show-logo", NULL, IMMUTABLE_CONFIG, server.always_show_logo, 0, NULL, NULL),
+    //是否启用保护模式，只有在bind address和密码正确的客户端才可以连接，默认开启
     createBoolConfig("protected-mode", NULL, MODIFIABLE_CONFIG, server.protected_mode, 1, NULL, NULL),
+    //rdb转储时是否进行压缩，默认压缩
     createBoolConfig("rdbcompression", NULL, MODIFIABLE_CONFIG, server.rdb_compression, 1, NULL, NULL),
     createBoolConfig("rdb-del-sync-files", NULL, MODIFIABLE_CONFIG, server.rdb_del_sync_files, 0, NULL, NULL),
     createBoolConfig("activerehashing", NULL, MODIFIABLE_CONFIG, server.activerehashing, 1, NULL, NULL),
