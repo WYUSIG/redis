@@ -171,6 +171,6 @@ struct __attribute__ ((__packed__)) sdshdr8 {
 
 数据部分buf[]：末尾填充'\0' = 1byte
 
-所以在64位系统中：
+所以：
 
 64 - 16 - 3 - 1 = 44

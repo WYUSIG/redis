@@ -44,15 +44,15 @@
  * attempted_compress: 1 bit, boolean, used for verifying during testing.
  * extra: 10 bits, free for future use; pads out the remainder of 32 bits */
 typedef struct quicklistNode {
-    struct quicklistNode *prev;
-    struct quicklistNode *next;
-    unsigned char *zl;
-    unsigned int sz;             /* ziplist size in bytes */
-    unsigned int count : 16;     /* count of items in ziplist */
-    unsigned int encoding : 2;   /* RAW==1 or LZF==2 */
-    unsigned int container : 2;  /* NONE==1 or ZIPLIST==2 */
-    unsigned int recompress : 1; /* was this node previous compressed? */
-    unsigned int attempted_compress : 1; /* node can't compress; too small */
+    struct quicklistNode *prev; //前一个quicklistNode
+    struct quicklistNode *next; //后一个quicklistNode
+    unsigned char *zl;  //quicklistNode指向的ziplist
+    unsigned int sz;             /* ziplist size in bytes ziplist字节个数*/
+    unsigned int count : 16;     /* count of items in ziplist ziplist元素个数*/
+    unsigned int encoding : 2;   /* RAW==1 or LZF==2 编码方式：原生字节数组和压缩存储*/
+    unsigned int container : 2;  /* NONE==1 or ZIPLIST==2 存储方式*/
+    unsigned int recompress : 1; /* was this node previous compressed? 数据是否被压缩*/
+    unsigned int attempted_compress : 1; /* node can't compress; too small 数据能否被压缩*/
     unsigned int extra : 10; /* more bits to steal for future usage */
 } quicklistNode;
 
@@ -103,10 +103,10 @@ typedef struct quicklistBookmark {
  * 'bookmakrs are an optional feature that is used by realloc this struct,
  *      so that they don't consume memory when not used. */
 typedef struct quicklist {
-    quicklistNode *head;
-    quicklistNode *tail;
-    unsigned long count;        /* total count of all entries in all ziplists */
-    unsigned long len;          /* number of quicklistNodes */
+    quicklistNode *head;  //quicklist链表头
+    quicklistNode *tail;  //quicklist链表尾
+    unsigned long count;        /* total count of all entries in all ziplists quicklist的ziplist个数*/
+    unsigned long len;          /* number of quicklistNodes quicklist的quicklistNode个数*/
     int fill : QL_FILL_BITS;              /* fill factor for individual nodes */
     unsigned int compress : QL_COMP_BITS; /* depth of end nodes not to compress;0=off */
     unsigned int bookmark_count: QL_BM_BITS;

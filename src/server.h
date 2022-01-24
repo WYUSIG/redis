@@ -912,24 +912,24 @@ struct sharedObjectsStruct {
 
 /* ZSETs use a specialized version of Skiplists */
 typedef struct zskiplistNode {
-    sds ele;
-    double score;
-    struct zskiplistNode *backward;
+    sds ele; //sort set 中的元素
+    double score; //元素权重
+    struct zskiplistNode *backward; //后向指针
     struct zskiplistLevel {
-        struct zskiplistNode *forward;
-        unsigned long span;
+        struct zskiplistNode *forward; //上一层的前向指针
+        unsigned long span; //跨度
     } level[];
 } zskiplistNode;
 
 typedef struct zskiplist {
-    struct zskiplistNode *header, *tail;
-    unsigned long length;
-    int level;
+    struct zskiplistNode *header, *tail; //头节点、尾节点
+    unsigned long length; //跳表长度
+    int level; //跳表最大层数
 } zskiplist;
 
 typedef struct zset {
-    dict *dict;
-    zskiplist *zsl;
+    dict *dict; //哈希表
+    zskiplist *zsl; //ziplist
 } zset;
 
 typedef struct clientBufferLimitsConfig {
