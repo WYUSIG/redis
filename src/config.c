@@ -374,12 +374,15 @@ void loadServerConfigFromString(char *config) {
         int argc;
 
         linenum = i+1;
+        //移除字符串前置空白和后缀空白
         lines[i] = sdstrim(lines[i]," \t\r\n");
 
         /* Skip comments and blank lines */
+        //跳过注释和空白行
         if (lines[i][0] == '#' || lines[i][0] == '\0') continue;
 
         /* Split into arguments */
+        //将字符串分割成多个参数
         argv = sdssplitargs(lines[i],&argc);
         if (argv == NULL) {
             err = "Unbalanced quotes in configuration line";
@@ -387,10 +390,12 @@ void loadServerConfigFromString(char *config) {
         }
 
         /* Skip this line if the resulting command vector is empty. */
+        //跳过空白参数
         if (argc == 0) {
             sdsfreesplitres(argv,argc);
             continue;
         }
+        //将选项名称转成小写
         sdstolower(argv[0]);
 
         /* Iterate the configs that are standard */
@@ -412,12 +417,14 @@ void loadServerConfigFromString(char *config) {
             }
         }
 
+        //如果没有命中标准参数，则跳过
         if (match) {
             sdsfreesplitres(argv,argc);
             continue;
         }
 
         /* Execute config directives */
+        //bind配置，服务器接受请求的客户端地址(白名单)
         if (!strcasecmp(argv[0],"bind") && argc >= 2) {
             int j, addresses = argc-1;
 
@@ -438,6 +445,7 @@ void loadServerConfigFromString(char *config) {
                 err = "Invalid socket file permissions"; goto loaderr;
             }
         } else if (!strcasecmp(argv[0],"save")) {
+            //save配置，多长时间改变多少处保存一次
             if (argc == 3) {
                 int seconds = atoi(argv[1]);
                 int changes = atoi(argv[2]);
@@ -455,6 +463,7 @@ void loadServerConfigFromString(char *config) {
                 exit(1);
             }
         } else if (!strcasecmp(argv[0],"logfile") && argc == 2) {
+            //logfile配置，日志文件路径
             FILE *logfp;
 
             zfree(server.logfile);
@@ -2266,29 +2275,53 @@ static int updateTlsCfgInt(long long val, long long prev, char **err) {
 
 standardConfig configs[] = {
     /* Bool configs */
+    //是否禁用rdb文件CRC校验和校验，默认禁用
     createBoolConfig("rdbchecksum", NULL, IMMUTABLE_CONFIG, server.rdb_checksum, 1, NULL, NULL),
+    //是否以守护进程启动Redis，(守护进程：在系统引导装入时启动，仅在系统关闭时才终止)，默认否
     createBoolConfig("daemonize", NULL, IMMUTABLE_CONFIG, server.daemonize, 0, NULL, NULL),
+    //io线程是否也进行读操作，默认否，只进行写，将客户端缓冲区传输到套接字
     createBoolConfig("io-threads-do-reads", NULL, IMMUTABLE_CONFIG, server.io_threads_do_reads, 0,NULL, NULL), /* Read + parse from threads? */
+    //复制类型，是使用真实命令进行复制，还是使用AOF文件进行复制，默认真实命令
     createBoolConfig("lua-replicate-commands", NULL, MODIFIABLE_CONFIG, server.lua_always_replicate_commands, 1, NULL, NULL),
+    //是否启动日志也输出Redis ascii logo，默认否
     createBoolConfig("always-show-logo", NULL, IMMUTABLE_CONFIG, server.always_show_logo, 0, NULL, NULL),
+    //是否启用保护模式，只有在bind address和密码正确的客户端才可以连接，默认开启
     createBoolConfig("protected-mode", NULL, MODIFIABLE_CONFIG, server.protected_mode, 1, NULL, NULL),
+    //rdb转储时是否进行压缩，默认压缩
     createBoolConfig("rdbcompression", NULL, MODIFIABLE_CONFIG, server.rdb_compression, 1, NULL, NULL),
+    //是否删除复制过程产生的RDB文件，默认否(此参数只有在禁用AOF和RDB持久化时才生效，一些数据敏感系统可能需要)
     createBoolConfig("rdb-del-sync-files", NULL, MODIFIABLE_CONFIG, server.rdb_del_sync_files, 0, NULL, NULL),
+    //是否启动定时渐进式rehash(如果只靠客户端命令进行推进rehash进度，那么在没有命令到来时将永远不会完成rehash)，默认启动，1秒执行10次rehash
     createBoolConfig("activerehashing", NULL, MODIFIABLE_CONFIG, server.activerehashing, 1, NULL, NULL),
+    //如果生成rdb快照失败，是否禁止后续的写操作，默认是(此参数是为了防止清空恶化，没人注意到持久化发生错误等，如果已经设置了对Redis服务器和持久性的正确监视，则可以把该配置项设为no)
     createBoolConfig("stop-writes-on-bgsave-error", NULL, MODIFIABLE_CONFIG, server.stop_writes_on_bgsave_err, 1, NULL, NULL),
+    //是否启动动态频率，默认启用(当客户端连接数增加时，hz将会提高，空闲实例将使用很少的CPU时间，而繁忙实例将更具响应性。)
     createBoolConfig("dynamic-hz", NULL, MODIFIABLE_CONFIG, server.dynamic_hz, 1, NULL, NULL), /* Adapt hz to # of clients.*/
+    //针对内存使用达到maxmemory，需要进行的删除，是否异步删除，默认否
     createBoolConfig("lazyfree-lazy-eviction", NULL, MODIFIABLE_CONFIG, server.lazyfree_lazy_eviction, 0, NULL, NULL),
+    //针对元素过期的删除，是否异步删除，默认否
     createBoolConfig("lazyfree-lazy-expire", NULL, MODIFIABLE_CONFIG, server.lazyfree_lazy_expire, 0, NULL, NULL),
+    //针对服务器内部replace的删除，是否异步删除，默认否
     createBoolConfig("lazyfree-lazy-server-del", NULL, MODIFIABLE_CONFIG, server.lazyfree_lazy_server_del, 0, NULL, NULL),
+    //针对全量同步前的删除，是否异步删除，默认否
     createBoolConfig("lazyfree-lazy-user-del", NULL, MODIFIABLE_CONFIG, server.lazyfree_lazy_user_del , 0, NULL, NULL),
+    //是否允许分配大量带宽进行主从同步，默认否(如果主从延迟很大，建议改成yes)
     createBoolConfig("repl-disable-tcp-nodelay", NULL, MODIFIABLE_CONFIG, server.repl_disable_tcp_nodelay, 0, NULL, NULL),
+    //是否使用无盘策略进行主从复制，默认否(无盘是指RDB快照将不在写到磁盘文件，而是直接传输，对于慢磁盘，大带宽，无盘策略效果更好)
     createBoolConfig("repl-diskless-sync", NULL, MODIFIABLE_CONFIG, server.repl_diskless_sync, 0, NULL, NULL),
+    //是否开启gopher协议连接，默认否(gopher是另一种冷门的web协议)
     createBoolConfig("gopher-enabled", NULL, MODIFIABLE_CONFIG, server.gopher_enabled, 0, NULL, NULL),
+    //是否开启AOF重写到一定量就刷盘，默认是，当重写生成了32M数据，将进行一次刷盘
     createBoolConfig("aof-rewrite-incremental-fsync", NULL, MODIFIABLE_CONFIG, server.aof_rewrite_incremental_fsync, 1, NULL, NULL),
+    //如果有子进程正在写io，那么AOF落盘是否降级为appendfsync no(由系统决定何时落盘), 默认否
     createBoolConfig("no-appendfsync-on-rewrite", NULL, MODIFIABLE_CONFIG, server.aof_no_fsync_on_rewrite, 0, NULL, NULL),
+    //如果有一个哈希槽不可用了，是否停止服务，默认是(这个设计有点反人类，建议改成no)
     createBoolConfig("cluster-require-full-coverage", NULL, MODIFIABLE_CONFIG, server.cluster_require_full_coverage, 1, NULL, NULL),
+    //是否开启RDB数据生成到一定量就刷盘，默认是，当生成了32M数据，将进行一次刷盘
     createBoolConfig("rdb-save-incremental-fsync", NULL, MODIFIABLE_CONFIG, server.rdb_save_incremental_fsync, 1, NULL, NULL),
+    //是否允许加载截断的AOF日志，默认是，当操作系统突然关闭等情况可能导致AOF日志出现错误，被截断，如果该参数设置为no则无法启动redis，需要使用redis-check-aof来修复aof文件
     createBoolConfig("aof-load-truncated", NULL, MODIFIABLE_CONFIG, server.aof_load_truncated, 1, NULL, NULL),
+    //是否开启AOF+RDB混用持久化，默认是
     createBoolConfig("aof-use-rdb-preamble", NULL, MODIFIABLE_CONFIG, server.aof_use_rdb_preamble, 1, NULL, NULL),
     createBoolConfig("cluster-replica-no-failover", "cluster-slave-no-failover", MODIFIABLE_CONFIG, server.cluster_slave_no_failover, 0, NULL, NULL), /* Failover by default. */
     createBoolConfig("replica-lazy-flush", "slave-lazy-flush", MODIFIABLE_CONFIG, server.repl_slave_lazy_flush, 0, NULL, NULL),

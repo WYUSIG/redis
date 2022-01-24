@@ -479,6 +479,7 @@ void initSentinel(void) {
 
     /* Remove usual Redis commands from the command table, then just add
      * the SENTINEL command. */
+    //清空命令表，指添加sentinel相关命令
     dictEmpty(server.commands,NULL);
     for (j = 0; j < sizeof(sentinelcmds)/sizeof(sentinelcmds[0]); j++) {
         int retval;
@@ -494,6 +495,7 @@ void initSentinel(void) {
     }
 
     /* Initialize various data structures. */
+    //初始化sentinel各种数据结构
     sentinel.current_epoch = 0;
     sentinel.masters = dictCreate(&instancesDictType,NULL);
     sentinel.tilt = 0;
