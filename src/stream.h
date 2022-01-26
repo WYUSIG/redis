@@ -14,10 +14,10 @@ typedef struct streamID {
 } streamID;
 
 typedef struct stream {
-    rax *rax;               /* The radix tree holding the stream. */
-    uint64_t length;        /* Number of elements inside this stream. */
-    streamID last_id;       /* Zero if there are yet no items. */
-    rax *cgroups;           /* Consumer groups dictionary: name -> streamCG */
+    rax *rax;               /* The radix tree holding the stream. 前缀树*/
+    uint64_t length;        /* Number of elements inside this stream. stream里面的消息数*/
+    streamID last_id;       /* Zero if there are yet no items. 消息流中最后一个消息的id*/
+    rax *cgroups;           /* Consumer groups dictionary: name -> streamCG 消费者组信息*/
 } stream;
 
 /* We define an iterator to iterate stream items in an abstract way, without
