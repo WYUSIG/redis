@@ -150,6 +150,15 @@ void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
 
+/**
+ * IO事件创建
+ * @param eventLoop 事件循环流程结构体对象
+ * @param fd io事件对应的文件描述符
+ * @param mask 事件类型掩码
+ * @param proc 事件处理回调函数
+ * @param clientData 事件私有数据
+ * @return
+ */
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {
@@ -159,6 +168,7 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
     }
     aeFileEvent *fe = &eventLoop->events[fd];
 
+    //调用epoll_ctl添加监听事件
     if (aeApiAddEvent(eventLoop, fd, mask) == -1)
         return AE_ERR;
     fe->mask |= mask;

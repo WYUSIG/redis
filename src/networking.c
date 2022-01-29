@@ -1060,7 +1060,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
             return;
         }
         serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
-        acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);
+        acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip); //创建已连接套接字，传给acceptCommonHandler进行处理
     }
 }
 
