@@ -213,3 +213,57 @@ client *createClient(int fd) {
    /...
 }
 ```
+
+![示例图](img/event_read_1.png)
+
+![示例图](img/event_read_2.png)
+
+#### 写事件处理
+
+```c
+
+void aeMain(aeEventLoop *eventLoop) {
+    eventLoop->stop = 0;
+  while (!eventLoop->stop) {
+      //如果beforeSleep函数不为空，则调用beforeSleep函数
+        if (eventLoop->beforesleep != NULL)
+            eventLoop->beforesleep(eventLoop);
+        //调用完beforeSleep函数，再处理事件
+        aeProcessEvents(eventLoop, AE_ALL_EVENTS|AE_CALL_AFTER_SLEEP);
+    }
+}
+```
+
+在读时间事件处理后，把数据写到缓冲区里面，在事件循环之前，会执行beforesleep函数，把缓冲区的数据写回客户端
+
+![示例图](img/event_write_1.png)
+
+我们来看一下handleClientsWithPendingWrite函数
+
+```c
+
+int handleClientsWithPendingWrites(void) {
+    listIter li;
+  listNode *ln;
+  //...
+    //获取待写回的客户端列表
+  listRewind(server.clients_pending_write,&li);
+  //遍历每一个待写回的客户端
+  while((ln = listNext(&li))) {
+     client *c = listNodeValue(ln);
+     //...
+     //调用writeToClient将当前客户端的输出缓冲区数据写回
+     if (writeToClient(c->fd,c,0) == C_ERR) continue;
+     //如果还有待写回数据
+     if (clientHasPendingReplies(c)) {
+              int ae_flags = AE_WRITABLE;
+              //创建可写事件的监听，以及设置回调函数
+               if (aeCreateFileEvent(server.el, c->fd, ae_flags,
+                  sendReplyToClient, c) == AE_ERR)
+              {
+                     //...
+              }
+    } }
+}
+```
+
